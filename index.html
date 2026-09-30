@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#080d1b">
+  <title>Skywriter — draw in the air</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <div class="app">
+    <video id="camera" autoplay playsinline muted aria-hidden="true"></video>
+    <div class="veil" aria-hidden="true"></div>
+    <canvas id="drawing" aria-label="Your drawing"></canvas>
+    <div class="cursor" id="cursor" aria-hidden="true"><span></span></div>
+
+    <header class="topbar">
+      <div class="brand"><div class="brand-mark">✳</div><div>skywriter<span class="brand-dot">.</span></div></div>
+      <div class="status" id="status"><span class="status-light"></span><span id="status-text">Camera off</span></div>
+      <button class="icon-button camera-toggle" id="camera-toggle" type="button" hidden aria-label="Turn camera off" title="Turn camera off">◉</button>
+    </header>
+
+    <main class="welcome" id="welcome">
+      <div class="welcome-content">
+        <div class="eyebrow"><span class="eyebrow-line"></span> YOUR SPACE TO CREATE</div>
+        <h1>Make the air<br>your <em>canvas.</em></h1>
+        <p>Draw with nothing but your hands. No mouse, no limits — just you and a little bit of magic.</p>
+        <button class="start-button" id="start" type="button">Enable camera <span aria-hidden="true">↗</span></button>
+        <div class="privacy"><span aria-hidden="true">◈</span> Your camera stays in your browser. Nothing is recorded or uploaded.</div>
+        <p class="error" id="error" role="alert" hidden></p>
+      </div>
+      <div class="hero-art" aria-hidden="true"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="orbit orbit-three"></div><div class="hero-star">✳</div><div class="art-label">A BLANK CANVAS AWAITS</div></div>
+    </main>
+
+    <div class="workspace-ui" id="workspace" hidden>
+      <div class="hint" id="hint" role="status">Show both hands to begin</div>
+      <aside class="palette" id="palette" aria-label="Colour palette" hidden>
+        <div class="palette-title">PICK A COLOUR <span>↘</span></div>
+        <div class="swatches" id="swatches"></div>
+        <div class="palette-foot">Point to choose</div>
+      </aside>
+      <div class="bottom-bar">
+        <div class="gesture-guide"><div class="guide-item"><span class="guide-icon">☝</span><span><strong>Right hand</strong><small>Move to guide</small></span></div><div class="guide-divider"></div><div class="guide-item"><span class="guide-icon">✋</span><span><strong>Left open</strong><small>Draw in the air</small></span></div><div class="guide-divider"></div><div class="guide-item"><span class="guide-icon">✊</span><span><strong>Left closed</strong><small>Choose a colour</small></span></div></div>
+        <div class="actions"><span class="current-ink" id="current-ink" title="Current colour"></span><button id="clear" class="utility-button" type="button">Clear canvas</button><button id="save" class="utility-button primary" type="button">Save image <span aria-hidden="true">↗</span></button></div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
