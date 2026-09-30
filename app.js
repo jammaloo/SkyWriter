@@ -20,6 +20,7 @@ let landmarker;
 let frameId;
 let lastVideoTime = -1;
 let lastPoint = null;
+let lastMode = null;
 let ink = colours[0][1];
 let hoveredColour = null;
 let hoverSince = 0;
@@ -86,6 +87,7 @@ function stopCamera() {
   landmarker = undefined;
   lastVideoTime = -1;
   lastPoint = null;
+  lastMode = null;
   cursor.style.display = 'none';
   palette.hidden = true;
   $('workspace').hidden = true;
@@ -144,6 +146,13 @@ function isOpen(hand) {
   ).length >= 3;
 }
 
+function thumbExtended(hand) {
+  const distance = (a, b) => Math.hypot(hand[a].x - hand[b].x, hand[a].y - hand[b].y);
+  const palmWidth = distance(5, 17) || 0.01;
+  return distance(4, 5) > palmWidth * 0.8 &&
+    distance(4, 17) > distance(3, 17) + palmWidth * 0.25;
+}
+
 function screenPoint(landmark) {
   const width = window.innerWidth;
   const height = window.innerHeight;
@@ -176,24 +185,30 @@ function handleHands(result) {
     if (label === 'Right') right = hand;
     if (label === 'Left') left = hand;
   });
-  const open = left && isOpen(left);
-  palette.hidden = !left || open;
-  if (!right) {
+  const singleHand = result.landmarks.length === 1;
+  const pointer = singleHand ? result.landmarks[0] : right;
+  const drawing = singleHand ? thumbExtended(pointer) : !!left && isOpen(left);
+  const mode = singleHand ? 'one' : 'two';
+  palette.hidden = !pointer || (!singleHand && !left) || drawing;
+  if (!pointer) {
     cursor.style.display = 'none';
     lastPoint = null;
-    setHint('Show your right hand to move the cursor');
+    lastMode = null;
+    setHint(result.landmarks.length ? 'Show your right hand to move the cursor' : 'Show a hand to begin');
     return;
   }
-  const point = screenPoint(right[8]);
+  if (mode !== lastMode) lastPoint = null;
+  lastMode = mode;
+  const point = screenPoint(pointer[8]);
   cursor.style.display = 'grid';
   cursor.style.left = `${point.x}px`;
   cursor.style.top = `${point.y}px`;
-  cursor.classList.toggle('drawing', !!open);
-  if (!left) {
+  cursor.classList.toggle('drawing', drawing);
+  if (!singleHand && !left) {
     lastPoint = null;
     setHint('Show your left hand to draw or pick a colour');
-  } else if (open) {
-    setHint('Drawing · close your left hand to choose a colour');
+  } else if (drawing) {
+    setHint(singleHand ? 'Drawing · tuck your thumb in to choose a colour' : 'Drawing · close your left hand to choose a colour');
     ctx.strokeStyle = ink;
     ctx.fillStyle = ink;
     ctx.lineWidth = 5;
@@ -214,7 +229,7 @@ function handleHands(result) {
     lastPoint = point;
   } else {
     lastPoint = null;
-    setHint('Point your right index finger at a colour');
+    setHint(singleHand ? 'Tuck thumb in · point at a colour' : 'Point your right index finger at a colour');
     updatePalette(point);
   }
 }
