@@ -17,6 +17,8 @@ const $ = (id) => document.getElementById(id);
 const video = $('camera');
 const canvas = $('drawing');
 const ctx = canvas.getContext('2d');
+const fadeLayer = document.createElement('canvas');
+const fadeCtx = fadeLayer.getContext('2d');
 const inferenceCanvas = document.createElement('canvas');
 const inferenceCtx = inferenceCanvas.getContext('2d', { willReadFrequently: true });
 const markers = $('markers');
@@ -45,6 +47,9 @@ function resizeCanvas() {
   if (backup.width && backup.height) backup.getContext('2d').drawImage(canvas, 0, 0);
   canvas.width = Math.round(width * dpr);
   canvas.height = Math.round(height * dpr);
+  fadeLayer.width = canvas.width;
+  fadeLayer.height = canvas.height;
+  fadeCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
   canvas.style.width = `${width}px`;
   canvas.style.height = `${height}px`;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -169,22 +174,22 @@ function drawFinger(point, previous, colour) {
   paintStroke(point, from, colour);
 }
 
-function paintStroke(point, from, colour, glow = true) {
-  ctx.strokeStyle = colour;
-  ctx.fillStyle = colour;
-  ctx.lineWidth = 5;
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-  ctx.shadowColor = glow ? colour : 'transparent';
-  ctx.shadowBlur = glow ? 15 : 0;
-  ctx.beginPath();
+function paintStroke(point, from, colour, glow = true, target = ctx) {
+  target.strokeStyle = colour;
+  target.fillStyle = colour;
+  target.lineWidth = 5;
+  target.lineCap = 'round';
+  target.lineJoin = 'round';
+  target.shadowColor = glow ? colour : 'transparent';
+  target.shadowBlur = glow ? 15 : 0;
+  target.beginPath();
   if (from) {
-    ctx.moveTo(from.x, from.y);
-    ctx.lineTo(point.x, point.y);
-    ctx.stroke();
+    target.moveTo(from.x, from.y);
+    target.lineTo(point.x, point.y);
+    target.stroke();
   } else {
-    ctx.arc(point.x, point.y, 2.5, 0, Math.PI * 2);
-    ctx.fill();
+    target.arc(point.x, point.y, 2.5, 0, Math.PI * 2);
+    target.fill();
   }
 }
 
@@ -225,18 +230,31 @@ function fadeDrawing(now) {
     return;
   }
   lastRenderTime = now;
+  ctx.globalAlpha = 1;
+  ctx.shadowBlur = 0;
+  ctx.shadowColor = 'transparent';
   ctx.clearRect(0, 0, canvasWidth, canvasHeight);
   fadingStrokes = fadingStrokes.filter((stroke) => now - stroke.born < fadeDuration);
+  const layers = new Map();
   for (const stroke of fadingStrokes) {
-    const progress = Math.max(0, (now - stroke.born) / fadeDuration);
-    ctx.globalAlpha = 1 - progress ** 4;
     if (stroke.image) {
+      const progress = Math.max(0, (now - stroke.born) / fadeDuration);
+      ctx.globalAlpha = 1 - progress ** 4;
       ctx.shadowBlur = 0;
       ctx.shadowColor = 'transparent';
       ctx.drawImage(stroke.image, 0, 0, canvasWidth, canvasHeight);
     } else {
-      paintStroke(stroke.point, stroke.from, stroke.colour, false);
+      const bucket = Math.floor(stroke.born / 2000);
+      if (!layers.has(bucket)) layers.set(bucket, []);
+      layers.get(bucket).push(stroke);
     }
+  }
+  for (const [bucket, strokes] of layers) {
+    fadeCtx.clearRect(0, 0, canvasWidth, canvasHeight);
+    for (const stroke of strokes) paintStroke(stroke.point, stroke.from, stroke.colour, false, fadeCtx);
+    const progress = Math.max(0, (now - bucket * 2000) / fadeDuration);
+    ctx.globalAlpha = 1 - progress ** 4;
+    ctx.drawImage(fadeLayer, 0, 0, canvasWidth, canvasHeight);
   }
   ctx.globalAlpha = 1;
   fadeFrame = requestAnimationFrame(fadeDrawing);
