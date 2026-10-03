@@ -29,6 +29,9 @@ const lastPoints = new Map();
 const fingerMarkers = new Map();
 let canvasWidth = 0;
 let canvasHeight = 0;
+let fadeFrame;
+let lastFadeTime;
+const fadeButton = $('fade');
 
 function resizeCanvas() {
   const width = window.innerWidth;
@@ -200,6 +203,19 @@ function handleHands(result) {
   setHint(result.landmarks.length ? 'Extended fingers draw · curl a finger to lift its brush' : 'Show a hand to begin');
 }
 
+function fadeDrawing(now) {
+  if (lastFadeTime !== undefined) {
+    const elapsed = Math.min(now - lastFadeTime, 100);
+    ctx.save();
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.fillStyle = `rgba(0, 0, 0, ${1 - Math.exp(-elapsed / 5000)})`;
+    ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+    ctx.restore();
+  }
+  lastFadeTime = now;
+  fadeFrame = requestAnimationFrame(fadeDrawing);
+}
+
 function trackHands() {
   if (!stream || !landmarker) return;
   try {
@@ -222,6 +238,17 @@ function trackHands() {
 
 $('start').addEventListener('click', startCamera);
 $('camera-toggle').addEventListener('click', stopCamera);
+fadeButton.addEventListener('click', () => {
+  const enabled = fadeButton.getAttribute('aria-pressed') !== 'true';
+  fadeButton.setAttribute('aria-pressed', String(enabled));
+  if (enabled) {
+    lastFadeTime = undefined;
+    fadeFrame = requestAnimationFrame(fadeDrawing);
+  } else {
+    cancelAnimationFrame(fadeFrame);
+    lastFadeTime = undefined;
+  }
+});
 $('clear').addEventListener('click', () => ctx.clearRect(0, 0, canvasWidth, canvasHeight));
 $('save').addEventListener('click', () => {
   const link = document.createElement('a');
