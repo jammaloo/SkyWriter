@@ -30,8 +30,10 @@ const fingerMarkers = new Map();
 let canvasWidth = 0;
 let canvasHeight = 0;
 let fadeFrame;
-let lastFadeTime;
+let lastRenderTime = 0;
+let fadingStrokes = [];
 const fadeButton = $('fade');
+const fadeDuration = 20000;
 
 function resizeCanvas() {
   const width = window.innerWidth;
@@ -49,6 +51,9 @@ function resizeCanvas() {
   if (backup.width && backup.height) ctx.drawImage(backup, 0, 0, canvasWidth, canvasHeight);
   canvasWidth = width;
   canvasHeight = height;
+  if (fadeButton?.getAttribute('aria-pressed') === 'true') {
+    fadingStrokes = [{ image: backup, born: performance.now() }];
+  }
   lastPoints.clear();
 }
 window.addEventListener('resize', resizeCanvas);
@@ -154,6 +159,15 @@ function screenPoint(landmark) {
 }
 
 function drawFinger(point, previous, colour) {
+  const from = previous && Math.hypot(point.x - previous.x, point.y - previous.y) < 110 ? previous : null;
+  if (fadeButton.getAttribute('aria-pressed') === 'true') {
+    fadingStrokes.push({ point, from, colour, born: performance.now() });
+    return;
+  }
+  paintStroke(point, from, colour);
+}
+
+function paintStroke(point, from, colour) {
   ctx.strokeStyle = colour;
   ctx.fillStyle = colour;
   ctx.lineWidth = 5;
@@ -162,8 +176,8 @@ function drawFinger(point, previous, colour) {
   ctx.shadowColor = colour;
   ctx.shadowBlur = 15;
   ctx.beginPath();
-  if (previous && Math.hypot(point.x - previous.x, point.y - previous.y) < 110) {
-    ctx.moveTo(previous.x, previous.y);
+  if (from) {
+    ctx.moveTo(from.x, from.y);
     ctx.lineTo(point.x, point.y);
     ctx.stroke();
   } else {
@@ -204,15 +218,23 @@ function handleHands(result) {
 }
 
 function fadeDrawing(now) {
-  if (lastFadeTime !== undefined) {
-    const elapsed = Math.min(now - lastFadeTime, 100);
-    ctx.save();
-    ctx.globalCompositeOperation = 'destination-out';
-    ctx.fillStyle = `rgba(0, 0, 0, ${1 - Math.exp(-elapsed / 5000)})`;
-    ctx.fillRect(0, 0, canvasWidth, canvasHeight);
-    ctx.restore();
+  if (now - lastRenderTime < 30) {
+    fadeFrame = requestAnimationFrame(fadeDrawing);
+    return;
   }
-  lastFadeTime = now;
+  lastRenderTime = now;
+  ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+  fadingStrokes = fadingStrokes.filter((stroke) => now - stroke.born < fadeDuration);
+  for (const stroke of fadingStrokes) {
+    const progress = Math.max(0, (now - stroke.born) / fadeDuration);
+    ctx.globalAlpha = 1 - progress ** 4;
+    if (stroke.image) {
+      ctx.drawImage(stroke.image, 0, 0, canvasWidth, canvasHeight);
+    } else {
+      paintStroke(stroke.point, stroke.from, stroke.colour);
+    }
+  }
+  ctx.globalAlpha = 1;
   fadeFrame = requestAnimationFrame(fadeDrawing);
 }
 
@@ -242,14 +264,21 @@ fadeButton.addEventListener('click', () => {
   const enabled = fadeButton.getAttribute('aria-pressed') !== 'true';
   fadeButton.setAttribute('aria-pressed', String(enabled));
   if (enabled) {
-    lastFadeTime = undefined;
+    const image = document.createElement('canvas');
+    image.width = canvas.width;
+    image.height = canvas.height;
+    image.getContext('2d').drawImage(canvas, 0, 0);
+    fadingStrokes = [{ image, born: performance.now() }];
     fadeFrame = requestAnimationFrame(fadeDrawing);
   } else {
     cancelAnimationFrame(fadeFrame);
-    lastFadeTime = undefined;
+    fadingStrokes = [];
   }
 });
-$('clear').addEventListener('click', () => ctx.clearRect(0, 0, canvasWidth, canvasHeight));
+$('clear').addEventListener('click', () => {
+  fadingStrokes = [];
+  ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+});
 $('save').addEventListener('click', () => {
   const link = document.createElement('a');
   link.download = 'skywriter.png';
