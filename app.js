@@ -37,6 +37,8 @@ let lastRenderTime = 0;
 let fadingStrokes = [];
 const fadeButton = $('fade');
 const fadeDuration = 10000;
+const fadeInterval = 500;
+const fadeOpacity = (age) => Math.max(0, 1 - age / fadeDuration) ** 2;
 
 function resizeCanvas() {
   const width = window.innerWidth;
@@ -56,11 +58,24 @@ function resizeCanvas() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.shadowBlur = 0;
   ctx.shadowColor = 'transparent';
-  if (backup.width && backup.height) ctx.drawImage(backup, 0, 0, canvasWidth, canvasHeight);
+  if (backup.width && backup.height && fadeButton?.getAttribute('aria-pressed') !== 'true') {
+    ctx.drawImage(backup, 0, 0, canvasWidth, canvasHeight);
+  }
   canvasWidth = width;
   canvasHeight = height;
   if (fadeButton?.getAttribute('aria-pressed') === 'true') {
-    fadingStrokes = [{ image: backup, born: performance.now() }];
+    for (const stroke of fadingStrokes) {
+      if (stroke.image) {
+        const resized = document.createElement('canvas');
+        resized.width = canvas.width;
+        resized.height = canvas.height;
+        resized.getContext('2d').drawImage(stroke.image, 0, 0, resized.width, resized.height);
+        stroke.image = resized;
+      } else {
+        stroke.point = { x: stroke.point.x * width / canvasWidth, y: stroke.point.y * height / canvasHeight };
+        if (stroke.from) stroke.from = { x: stroke.from.x * width / canvasWidth, y: stroke.from.y * height / canvasHeight };
+      }
+    }
   }
   lastPoints.clear();
   lastDrawnPoints.clear();
@@ -173,7 +188,7 @@ function drawFinger(point, previous, colour, key) {
     const lastDrawn = previous ? lastDrawnPoints.get(key) : null;
     if (lastDrawn && Math.hypot(point.x - lastDrawn.x, point.y - lastDrawn.y) < 2) return;
     const from = lastDrawn && Math.hypot(point.x - lastDrawn.x, point.y - lastDrawn.y) < 110 ? lastDrawn : null;
-    fadingStrokes.push({ point, from, colour, born: performance.now() });
+    fadingStrokes.push({ point, from, colour, born: Math.floor(performance.now() / fadeInterval) * fadeInterval });
     lastDrawnPoints.set(key, point);
     return;
   }
@@ -247,13 +262,12 @@ function fadeDrawing(now) {
   const layers = new Map();
   for (const stroke of fadingStrokes) {
     if (stroke.image) {
-      const progress = Math.max(0, (now - stroke.born) / fadeDuration);
-      ctx.globalAlpha = 1 - progress ** 2;
+      ctx.globalAlpha = fadeOpacity(now - stroke.born);
       ctx.shadowBlur = 0;
       ctx.shadowColor = 'transparent';
       ctx.drawImage(stroke.image, 0, 0, canvasWidth, canvasHeight);
     } else {
-      const bucket = Math.floor(stroke.born / 2000);
+      const bucket = stroke.born;
       if (!layers.has(bucket)) layers.set(bucket, []);
       layers.get(bucket).push(stroke);
     }
@@ -261,8 +275,7 @@ function fadeDrawing(now) {
   for (const [bucket, strokes] of layers) {
     fadeCtx.clearRect(0, 0, canvasWidth, canvasHeight);
     for (const stroke of strokes) paintStroke(stroke.point, stroke.from, stroke.colour, false, fadeCtx);
-    const progress = Math.max(0, (now - bucket * 2000) / fadeDuration);
-    ctx.globalAlpha = 1 - progress ** 2;
+    ctx.globalAlpha = fadeOpacity(now - bucket);
     ctx.drawImage(fadeLayer, 0, 0, canvasWidth, canvasHeight);
   }
   ctx.globalAlpha = 1;
