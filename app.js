@@ -347,10 +347,33 @@ $('clear').addEventListener('click', () => {
   fadeImage = null;
   ctx.clearRect(0, 0, canvasWidth, canvasHeight);
 });
-$('save').addEventListener('click', () => {
-  const link = document.createElement('a');
-  link.download = 'skywriter.png';
-  link.href = canvas.toDataURL('image/png');
-  link.click();
+$('save').addEventListener('click', async () => {
+  try {
+    const encoded = canvas.toDataURL('image/png').split(',')[1];
+    const binary = atob(encoded);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    const file = new File([bytes], 'skywriter.png', { type: 'image/png' });
+
+    if (navigator.maxTouchPoints > 0 && navigator.share && navigator.canShare?.({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file] });
+        return;
+      } catch (error) {
+        if (error.name === 'AbortError') return;
+      }
+    }
+
+    const url = URL.createObjectURL(file);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = file.name;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  } catch {
+    setHint('Could not save image. Please try again.');
+  }
 });
 window.addEventListener('pagehide', () => stream?.getTracks().forEach((track) => track.stop()));
