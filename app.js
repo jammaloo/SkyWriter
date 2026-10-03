@@ -64,6 +64,10 @@ function resizeCanvas() {
     for (const layer of fadeLayers.values()) {
       layer.canvas = scaleLayer(layer.canvas, width, height);
       layer.context = layer.canvas.getContext('2d');
+      layer.left *= width / canvasWidth;
+      layer.right *= width / canvasWidth;
+      layer.top *= height / canvasHeight;
+      layer.bottom *= height / canvasHeight;
     }
   }
   lastPoints.clear();
@@ -194,10 +198,14 @@ function drawFinger(point, previous, colour, key) {
       const layer = document.createElement('canvas');
       layer.width = canvasWidth;
       layer.height = canvasHeight;
-      fadeLayers.set(born, { canvas: layer, context: layer.getContext('2d') });
+      fadeLayers.set(born, { canvas: layer, context: layer.getContext('2d'), left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity });
     }
     const layer = fadeLayers.get(born);
     paintStroke(point, from, colour, false, layer.context);
+    layer.left = Math.min(layer.left, point.x, from?.x ?? point.x);
+    layer.top = Math.min(layer.top, point.y, from?.y ?? point.y);
+    layer.right = Math.max(layer.right, point.x, from?.x ?? point.x);
+    layer.bottom = Math.max(layer.bottom, point.y, from?.y ?? point.y);
     lastDrawnPoints.set(key, point);
     return;
   }
@@ -258,7 +266,7 @@ function handleHands(result) {
 }
 
 function fadeDrawing(now) {
-  if (now - lastRenderTime < 30) {
+  if (now - lastRenderTime < 75) {
     fadeFrame = requestAnimationFrame(fadeDrawing);
     return;
   }
@@ -277,8 +285,13 @@ function fadeDrawing(now) {
       fadeLayers.delete(born);
       continue;
     }
+    const left = Math.max(0, Math.floor(layer.left - 4));
+    const top = Math.max(0, Math.floor(layer.top - 4));
+    const right = Math.min(canvasWidth, Math.ceil(layer.right + 4));
+    const bottom = Math.min(canvasHeight, Math.ceil(layer.bottom + 4));
+    if (right <= left || bottom <= top) continue;
     ctx.globalAlpha = fadeOpacity(now - born);
-    ctx.drawImage(layer.canvas, 0, 0, canvasWidth, canvasHeight);
+    ctx.drawImage(layer.canvas, left, top, right - left, bottom - top, left, top, right - left, bottom - top);
   }
   ctx.globalAlpha = 1;
   fadeFrame = requestAnimationFrame(fadeDrawing);
