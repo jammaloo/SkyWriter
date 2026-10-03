@@ -48,6 +48,8 @@ function resizeCanvas() {
   canvas.style.width = `${width}px`;
   canvas.style.height = `${height}px`;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.shadowBlur = 0;
+  ctx.shadowColor = 'transparent';
   if (backup.width && backup.height) ctx.drawImage(backup, 0, 0, canvasWidth, canvasHeight);
   canvasWidth = width;
   canvasHeight = height;
@@ -167,14 +169,14 @@ function drawFinger(point, previous, colour) {
   paintStroke(point, from, colour);
 }
 
-function paintStroke(point, from, colour) {
+function paintStroke(point, from, colour, glow = true) {
   ctx.strokeStyle = colour;
   ctx.fillStyle = colour;
   ctx.lineWidth = 5;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
-  ctx.shadowColor = colour;
-  ctx.shadowBlur = 15;
+  ctx.shadowColor = glow ? colour : 'transparent';
+  ctx.shadowBlur = glow ? 15 : 0;
   ctx.beginPath();
   if (from) {
     ctx.moveTo(from.x, from.y);
@@ -229,9 +231,11 @@ function fadeDrawing(now) {
     const progress = Math.max(0, (now - stroke.born) / fadeDuration);
     ctx.globalAlpha = 1 - progress ** 4;
     if (stroke.image) {
+      ctx.shadowBlur = 0;
+      ctx.shadowColor = 'transparent';
       ctx.drawImage(stroke.image, 0, 0, canvasWidth, canvasHeight);
     } else {
-      paintStroke(stroke.point, stroke.from, stroke.colour);
+      paintStroke(stroke.point, stroke.from, stroke.colour, false);
     }
   }
   ctx.globalAlpha = 1;
