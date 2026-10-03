@@ -2,28 +2,31 @@ import { FilesetResolver, HandLandmarker } from 'https://cdn.jsdelivr.net/npm/@m
 
 const modelUrl = 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task';
 const wasmUrl = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.32/wasm';
-const colours = [
-  ['Lilac', '#a78bfa'], ['Pink', '#ff91bb'], ['Coral', '#ff8578'], ['Amber', '#ffcb73'],
-  ['Mint', '#6ce5bb'], ['Sky', '#73caff'], ['Blue', '#7593ff'], ['White', '#ffffff']
+const fingers = [
+  { name: 'Thumb', tip: 4, colour: '#a78bfa' },
+  { name: 'Index', tip: 8, colour: '#ff91bb' },
+  { name: 'Middle', tip: 12, colour: '#ffcb73' },
+  { name: 'Ring', tip: 16, colour: '#6ce5bb' },
+  { name: 'Pinky', tip: 20, colour: '#73caff' }
 ];
+const handColours = {
+  Left: fingers.map(({ colour }) => colour),
+  Right: ['#d7a5ff', '#ff8578', '#ffe796', '#8ca5ff', '#ffffff']
+};
 const $ = (id) => document.getElementById(id);
 const video = $('camera');
 const canvas = $('drawing');
 const ctx = canvas.getContext('2d');
 const inferenceCanvas = document.createElement('canvas');
 const inferenceCtx = inferenceCanvas.getContext('2d', { willReadFrequently: true });
-const cursor = $('cursor');
-const palette = $('palette');
+const markers = $('markers');
 const hint = $('hint');
 let stream;
 let landmarker;
 let frameId;
 let lastVideoTime = -1;
-let lastPoint = null;
-let lastMode = null;
-let ink = colours[0][1];
-let hoveredColour = null;
-let hoverSince = 0;
+const lastPoints = new Map();
+const fingerMarkers = new Map();
 let canvasWidth = 0;
 let canvasHeight = 0;
 
@@ -43,32 +46,22 @@ function resizeCanvas() {
   if (backup.width && backup.height) ctx.drawImage(backup, 0, 0, canvasWidth, canvasHeight);
   canvasWidth = width;
   canvasHeight = height;
-  lastPoint = null;
+  lastPoints.clear();
 }
 window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
 
-function selectColour(colour) {
-  ink = colour;
-  $('current-ink').style.background = colour;
-  $('current-ink').style.boxShadow = `0 0 14px ${colour}88`;
-  document.querySelectorAll('.swatch').forEach((element) => {
-    element.classList.toggle('selected', element.dataset.colour === colour);
+for (const side of ['Left', 'Right']) {
+  fingers.forEach(({ name }, index) => {
+    const key = `${side}-${name}`;
+    const marker = document.createElement('div');
+    marker.className = 'finger-marker';
+    marker.style.setProperty('--finger-colour', handColours[side][index]);
+    marker.setAttribute('aria-hidden', 'true');
+    markers.append(marker);
+    fingerMarkers.set(key, marker);
   });
 }
-
-for (const [name, colour] of colours) {
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.className = 'swatch';
-  button.style.setProperty('--swatch', colour);
-  button.dataset.colour = colour;
-  button.setAttribute('aria-label', name);
-  button.title = name;
-  button.addEventListener('click', () => selectColour(colour));
-  $('swatches').append(button);
-}
-selectColour(ink);
 
 function setStatus(message) {
   $('status-text').textContent = message;
@@ -86,10 +79,8 @@ function stopCamera() {
   landmarker?.close();
   landmarker = undefined;
   lastVideoTime = -1;
-  lastPoint = null;
-  lastMode = null;
-  cursor.style.display = 'none';
-  palette.hidden = true;
+  lastPoints.clear();
+  fingerMarkers.forEach((marker) => { marker.style.display = 'none'; });
   $('workspace').hidden = true;
   $('welcome').hidden = false;
   $('camera-toggle').hidden = true;
@@ -136,14 +127,10 @@ async function startCamera() {
   }
 }
 
-function isOpen(hand) {
-  const wrist = hand[0];
-  const palm = hand[9];
-  const scale = Math.hypot(palm.x - wrist.x, palm.y - wrist.y) || 0.01;
-  return [8, 12, 16, 20].filter((tip) =>
-    Math.hypot(hand[tip].x - wrist.x, hand[tip].y - wrist.y) >
-    Math.hypot(hand[tip - 2].x - wrist.x, hand[tip - 2].y - wrist.y) + scale * 0.22
-  ).length >= 3;
+function fingerExtended(hand, tip) {
+  const distance = (a, b) => Math.hypot(hand[a].x - hand[b].x, hand[a].y - hand[b].y);
+  const palmLength = distance(0, 9) || 0.01;
+  return distance(tip, 0) > distance(tip - 2, 0) + palmLength * 0.22;
 }
 
 function thumbExtended(hand) {
@@ -163,75 +150,54 @@ function screenPoint(landmark) {
   };
 }
 
-function updatePalette(point) {
-  const swatches = [...document.querySelectorAll('.swatch')];
-  const hit = swatches.find((element) => {
-    const rect = element.getBoundingClientRect();
-    return point.x >= rect.left - 7 && point.x <= rect.right + 7 && point.y >= rect.top - 7 && point.y <= rect.bottom + 7;
-  });
-  swatches.forEach((element) => element.classList.toggle('hovered', element === hit));
-  if (hit !== hoveredColour) {
-    hoveredColour = hit;
-    hoverSince = performance.now();
+function drawFinger(point, previous, colour) {
+  ctx.strokeStyle = colour;
+  ctx.fillStyle = colour;
+  ctx.lineWidth = 5;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.shadowColor = colour;
+  ctx.shadowBlur = 15;
+  ctx.beginPath();
+  if (previous && Math.hypot(point.x - previous.x, point.y - previous.y) < 110) {
+    ctx.moveTo(previous.x, previous.y);
+    ctx.lineTo(point.x, point.y);
+    ctx.stroke();
+  } else {
+    ctx.arc(point.x, point.y, 2.5, 0, Math.PI * 2);
+    ctx.fill();
   }
-  if (hit && performance.now() - hoverSince > 350) selectColour(hit.dataset.colour);
 }
 
 function handleHands(result) {
-  let right;
-  let left;
+  const active = new Set();
+  const usedSides = new Set();
   result.landmarks.forEach((hand, index) => {
-    const label = result.handedness[index]?.[0]?.categoryName;
-    if (label === 'Right') right = hand;
-    if (label === 'Left') left = hand;
+    const detectedSide = result.handedness[index]?.[0]?.categoryName;
+    const side = (detectedSide === 'Left' || detectedSide === 'Right') && !usedSides.has(detectedSide)
+      ? detectedSide : usedSides.has('Left') ? 'Right' : 'Left';
+    usedSides.add(side);
+    fingers.forEach(({ name, tip }, fingerIndex) => {
+      const key = `${side}-${name}`;
+      if (!(tip === 4 ? thumbExtended(hand) : fingerExtended(hand, tip))) return;
+      active.add(key);
+      const point = screenPoint(hand[tip]);
+      const colour = handColours[side][fingerIndex];
+      const marker = fingerMarkers.get(key);
+      marker.style.display = 'block';
+      marker.style.left = `${point.x}px`;
+      marker.style.top = `${point.y}px`;
+      drawFinger(point, lastPoints.get(key), colour);
+      lastPoints.set(key, point);
+    });
   });
-  const singleHand = result.landmarks.length === 1;
-  const pointer = singleHand ? result.landmarks[0] : right;
-  const drawing = singleHand ? thumbExtended(pointer) : !!left && isOpen(left);
-  const mode = singleHand ? 'one' : 'two';
-  palette.hidden = !pointer || (!singleHand && !left) || drawing;
-  if (!pointer) {
-    cursor.style.display = 'none';
-    lastPoint = null;
-    lastMode = null;
-    setHint(result.landmarks.length ? 'Show your right hand to move the cursor' : 'Show a hand to begin');
-    return;
-  }
-  if (mode !== lastMode) lastPoint = null;
-  lastMode = mode;
-  const point = screenPoint(pointer[8]);
-  cursor.style.display = 'grid';
-  cursor.style.left = `${point.x}px`;
-  cursor.style.top = `${point.y}px`;
-  cursor.classList.toggle('drawing', drawing);
-  if (!singleHand && !left) {
-    lastPoint = null;
-    setHint('Show your left hand to draw or pick a colour');
-  } else if (drawing) {
-    setHint(singleHand ? 'Drawing · tuck your thumb in to choose a colour' : 'Drawing · close your left hand to choose a colour');
-    ctx.strokeStyle = ink;
-    ctx.fillStyle = ink;
-    ctx.lineWidth = 5;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.shadowColor = ink;
-    ctx.shadowBlur = 15;
-    if (lastPoint && Math.hypot(point.x - lastPoint.x, point.y - lastPoint.y) < 110) {
-      ctx.beginPath();
-      ctx.moveTo(lastPoint.x, lastPoint.y);
-      ctx.lineTo(point.x, point.y);
-      ctx.stroke();
-    } else {
-      ctx.beginPath();
-      ctx.arc(point.x, point.y, 2.5, 0, Math.PI * 2);
-      ctx.fill();
+  fingerMarkers.forEach((marker, key) => {
+    if (!active.has(key)) {
+      marker.style.display = 'none';
+      lastPoints.delete(key);
     }
-    lastPoint = point;
-  } else {
-    lastPoint = null;
-    setHint(singleHand ? 'Tuck thumb in · point at a colour' : 'Point your right index finger at a colour');
-    updatePalette(point);
-  }
+  });
+  setHint(result.landmarks.length ? 'Extended fingers draw · curl a finger to lift its brush' : 'Show a hand to begin');
 }
 
 function trackHands() {

@@ -16,7 +16,7 @@
     <video id="camera" autoplay playsinline muted aria-hidden="true"></video>
     <div class="veil" aria-hidden="true"></div>
     <canvas id="drawing" aria-label="Your drawing"></canvas>
-    <div class="cursor" id="cursor" aria-hidden="true"><span></span></div>
+    <div id="markers" aria-hidden="true"></div>
 
     <header class="topbar">
       <div class="brand"><div class="brand-mark">✳</div><div>skywriter<span class="brand-dot">.</span></div></div>
@@ -28,7 +28,7 @@
       <div class="welcome-content">
         <div class="eyebrow"><span class="eyebrow-line"></span> YOUR SPACE TO CREATE</div>
         <h1>Make the air<br>your <em>canvas.</em></h1>
-        <p>Draw with nothing but your hands. No mouse, no limits — just you and a little bit of magic.</p>
+        <p>Each finger is a different colour. Extend a finger to paint, curl it to stop. Use one hand or both.</p>
         <button class="start-button" id="start" type="button">Enable camera <span aria-hidden="true">↗</span></button>
         <div class="privacy"><span aria-hidden="true">◈</span> Your camera stays in your browser. Nothing is recorded or uploaded.</div>
         <p class="error" id="error" role="alert" hidden></p>
@@ -38,14 +38,9 @@
 
     <div class="workspace-ui" id="workspace" hidden>
       <div class="hint" id="hint" role="status">Show a hand to begin</div>
-      <aside class="palette" id="palette" aria-label="Colour palette" hidden>
-        <div class="palette-title">PICK A COLOUR <span>↘</span></div>
-        <div class="swatches" id="swatches"></div>
-        <div class="palette-foot">Point to choose</div>
-      </aside>
       <div class="bottom-bar">
-        <div class="gesture-guide"><div class="guide-item"><span class="guide-icon">☝</span><span><strong>Index finger</strong><small>Move to guide</small></span></div><div class="guide-divider"></div><div class="guide-item"><span class="guide-icon">✋</span><span><strong>Draw</strong><small>Left open / thumb out</small></span></div><div class="guide-divider"></div><div class="guide-item"><span class="guide-icon">✊</span><span><strong>Colours</strong><small>Left closed / thumb in</small></span></div></div>
-        <div class="actions"><span class="current-ink" id="current-ink" title="Current colour"></span><button id="clear" class="utility-button" type="button">Clear canvas</button><button id="save" class="utility-button primary" type="button">Save image <span aria-hidden="true">↗</span></button></div>
+        <div class="gesture-guide"><div class="guide-item"><span class="guide-icon">✋</span><span><strong>Extend to draw</strong><small>Every finger has a colour</small></span></div><div class="guide-divider"></div><div class="guide-item"><span class="guide-icon">✊</span><span><strong>Curl to stop</strong><small>Use either or both hands</small></span></div></div>
+        <div class="actions"><button id="clear" class="utility-button" type="button">Clear canvas</button><button id="save" class="utility-button primary" type="button">Save image <span aria-hidden="true">↗</span></button></div>
       </div>
     </div>
   </div>
