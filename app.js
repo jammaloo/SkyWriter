@@ -36,7 +36,7 @@ let fadeFrame;
 let lastRenderTime = 0;
 let fadingStrokes = [];
 const fadeButton = $('fade');
-const fadeDuration = 20000;
+const fadeDuration = 10000;
 
 function resizeCanvas() {
   const width = window.innerWidth;
