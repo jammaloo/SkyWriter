@@ -17,8 +17,6 @@ const $ = (id) => document.getElementById(id);
 const video = $('camera');
 const canvas = $('drawing');
 const ctx = canvas.getContext('2d');
-const fadeLayer = document.createElement('canvas');
-const fadeCtx = fadeLayer.getContext('2d');
 const inferenceCanvas = document.createElement('canvas');
 const inferenceCtx = inferenceCanvas.getContext('2d', { willReadFrequently: true });
 const markers = $('markers');
@@ -34,10 +32,11 @@ let canvasWidth = 0;
 let canvasHeight = 0;
 let fadeFrame;
 let lastRenderTime = 0;
-let fadingStrokes = [];
+const fadeLayers = new Map();
+let fadeImage = null;
 const fadeButton = $('fade');
 const fadeDuration = 10000;
-const fadeInterval = 500;
+const fadeInterval = 1000;
 const fadeOpacity = (age) => Math.max(0, 1 - age / fadeDuration) ** 2;
 
 function resizeCanvas() {
@@ -50,9 +49,6 @@ function resizeCanvas() {
   if (backup.width && backup.height) backup.getContext('2d').drawImage(canvas, 0, 0);
   canvas.width = Math.round(width * dpr);
   canvas.height = Math.round(height * dpr);
-  fadeLayer.width = canvas.width;
-  fadeLayer.height = canvas.height;
-  fadeCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
   canvas.style.width = `${width}px`;
   canvas.style.height = `${height}px`;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -64,17 +60,10 @@ function resizeCanvas() {
   canvasWidth = width;
   canvasHeight = height;
   if (fadeButton?.getAttribute('aria-pressed') === 'true') {
-    for (const stroke of fadingStrokes) {
-      if (stroke.image) {
-        const resized = document.createElement('canvas');
-        resized.width = canvas.width;
-        resized.height = canvas.height;
-        resized.getContext('2d').drawImage(stroke.image, 0, 0, resized.width, resized.height);
-        stroke.image = resized;
-      } else {
-        stroke.point = { x: stroke.point.x * width / canvasWidth, y: stroke.point.y * height / canvasHeight };
-        if (stroke.from) stroke.from = { x: stroke.from.x * width / canvasWidth, y: stroke.from.y * height / canvasHeight };
-      }
+    if (fadeImage) fadeImage.canvas = scaleLayer(fadeImage.canvas, width, height);
+    for (const layer of fadeLayers.values()) {
+      layer.canvas = scaleLayer(layer.canvas, width, height);
+      layer.context = layer.canvas.getContext('2d');
     }
   }
   lastPoints.clear();
@@ -105,6 +94,9 @@ function setHint(message) {
 
 function stopCamera() {
   cancelAnimationFrame(frameId);
+  cancelAnimationFrame(fadeFrame);
+  fadeLayers.clear();
+  fadeImage = null;
   stream?.getTracks().forEach((track) => track.stop());
   stream = undefined;
   video.srcObject = null;
@@ -149,6 +141,7 @@ async function startCamera() {
     $('camera-toggle').hidden = false;
     document.querySelector('.app').classList.add('active');
     setStatus('Camera live');
+    if (fadeButton.getAttribute('aria-pressed') === 'true') startFade();
     frameId = requestAnimationFrame(trackHands);
   } catch (error) {
     stopCamera();
@@ -183,12 +176,28 @@ function screenPoint(landmark) {
   };
 }
 
+function scaleLayer(source, width, height) {
+  const scaled = document.createElement('canvas');
+  scaled.width = width;
+  scaled.height = height;
+  scaled.getContext('2d').drawImage(source, 0, 0, width, height);
+  return scaled;
+}
+
 function drawFinger(point, previous, colour, key) {
   if (fadeButton.getAttribute('aria-pressed') === 'true') {
     const lastDrawn = previous ? lastDrawnPoints.get(key) : null;
     if (lastDrawn && Math.hypot(point.x - lastDrawn.x, point.y - lastDrawn.y) < 2) return;
     const from = lastDrawn && Math.hypot(point.x - lastDrawn.x, point.y - lastDrawn.y) < 110 ? lastDrawn : null;
-    fadingStrokes.push({ point, from, colour, born: Math.floor(performance.now() / fadeInterval) * fadeInterval });
+    const born = Math.floor(performance.now() / fadeInterval) * fadeInterval;
+    if (!fadeLayers.has(born)) {
+      const layer = document.createElement('canvas');
+      layer.width = canvasWidth;
+      layer.height = canvasHeight;
+      fadeLayers.set(born, { canvas: layer, context: layer.getContext('2d') });
+    }
+    const layer = fadeLayers.get(born);
+    paintStroke(point, from, colour, false, layer.context);
     lastDrawnPoints.set(key, point);
     return;
   }
@@ -258,25 +267,18 @@ function fadeDrawing(now) {
   ctx.shadowBlur = 0;
   ctx.shadowColor = 'transparent';
   ctx.clearRect(0, 0, canvasWidth, canvasHeight);
-  fadingStrokes = fadingStrokes.filter((stroke) => now - stroke.born < fadeDuration);
-  const layers = new Map();
-  for (const stroke of fadingStrokes) {
-    if (stroke.image) {
-      ctx.globalAlpha = fadeOpacity(now - stroke.born);
-      ctx.shadowBlur = 0;
-      ctx.shadowColor = 'transparent';
-      ctx.drawImage(stroke.image, 0, 0, canvasWidth, canvasHeight);
-    } else {
-      const bucket = stroke.born;
-      if (!layers.has(bucket)) layers.set(bucket, []);
-      layers.get(bucket).push(stroke);
-    }
+  if (fadeImage && now - fadeImage.born >= fadeDuration) fadeImage = null;
+  if (fadeImage) {
+    ctx.globalAlpha = fadeOpacity(now - fadeImage.born);
+    ctx.drawImage(fadeImage.canvas, 0, 0, canvasWidth, canvasHeight);
   }
-  for (const [bucket, strokes] of layers) {
-    fadeCtx.clearRect(0, 0, canvasWidth, canvasHeight);
-    for (const stroke of strokes) paintStroke(stroke.point, stroke.from, stroke.colour, false, fadeCtx);
-    ctx.globalAlpha = fadeOpacity(now - bucket);
-    ctx.drawImage(fadeLayer, 0, 0, canvasWidth, canvasHeight);
+  for (const [born, layer] of fadeLayers) {
+    if (now - born >= fadeDuration) {
+      fadeLayers.delete(born);
+      continue;
+    }
+    ctx.globalAlpha = fadeOpacity(now - born);
+    ctx.drawImage(layer.canvas, 0, 0, canvasWidth, canvasHeight);
   }
   ctx.globalAlpha = 1;
   fadeFrame = requestAnimationFrame(fadeDrawing);
@@ -302,6 +304,17 @@ function trackHands() {
   }
 }
 
+function startFade() {
+  const image = document.createElement('canvas');
+  image.width = canvas.width;
+  image.height = canvas.height;
+  image.getContext('2d').drawImage(canvas, 0, 0);
+  fadeLayers.clear();
+  fadeImage = { canvas: image, born: performance.now() };
+  lastRenderTime = 0;
+  fadeFrame = requestAnimationFrame(fadeDrawing);
+}
+
 $('start').addEventListener('click', startCamera);
 $('camera-toggle').addEventListener('click', stopCamera);
 fadeButton.addEventListener('click', () => {
@@ -309,19 +322,16 @@ fadeButton.addEventListener('click', () => {
   fadeButton.setAttribute('aria-pressed', String(enabled));
   lastDrawnPoints.clear();
   if (enabled) {
-    const image = document.createElement('canvas');
-    image.width = canvas.width;
-    image.height = canvas.height;
-    image.getContext('2d').drawImage(canvas, 0, 0);
-    fadingStrokes = [{ image, born: performance.now() }];
-    fadeFrame = requestAnimationFrame(fadeDrawing);
+    if (!$('workspace').hidden) startFade();
   } else {
     cancelAnimationFrame(fadeFrame);
-    fadingStrokes = [];
+    fadeLayers.clear();
+    fadeImage = null;
   }
 });
 $('clear').addEventListener('click', () => {
-  fadingStrokes = [];
+  fadeLayers.clear();
+  fadeImage = null;
   ctx.clearRect(0, 0, canvasWidth, canvasHeight);
 });
 $('save').addEventListener('click', () => {
