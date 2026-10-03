@@ -28,6 +28,7 @@ let landmarker;
 let frameId;
 let lastVideoTime = -1;
 const lastPoints = new Map();
+const lastDrawnPoints = new Map();
 const fingerMarkers = new Map();
 let canvasWidth = 0;
 let canvasHeight = 0;
@@ -62,6 +63,7 @@ function resizeCanvas() {
     fadingStrokes = [{ image: backup, born: performance.now() }];
   }
   lastPoints.clear();
+  lastDrawnPoints.clear();
 }
 window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
@@ -95,6 +97,7 @@ function stopCamera() {
   landmarker = undefined;
   lastVideoTime = -1;
   lastPoints.clear();
+  lastDrawnPoints.clear();
   fingerMarkers.forEach((marker) => { marker.style.display = 'none'; });
   $('workspace').hidden = true;
   $('welcome').hidden = false;
@@ -165,12 +168,17 @@ function screenPoint(landmark) {
   };
 }
 
-function drawFinger(point, previous, colour) {
-  const from = previous && Math.hypot(point.x - previous.x, point.y - previous.y) < 110 ? previous : null;
+function drawFinger(point, previous, colour, key) {
   if (fadeButton.getAttribute('aria-pressed') === 'true') {
+    const lastDrawn = previous ? lastDrawnPoints.get(key) : null;
+    if (lastDrawn && Math.hypot(point.x - lastDrawn.x, point.y - lastDrawn.y) < 2) return;
+    const from = lastDrawn && Math.hypot(point.x - lastDrawn.x, point.y - lastDrawn.y) < 110 ? lastDrawn : null;
     fadingStrokes.push({ point, from, colour, born: performance.now() });
+    lastDrawnPoints.set(key, point);
     return;
   }
+  lastDrawnPoints.delete(key);
+  const from = previous && Math.hypot(point.x - previous.x, point.y - previous.y) < 110 ? previous : null;
   paintStroke(point, from, colour);
 }
 
@@ -211,7 +219,7 @@ function handleHands(result) {
       marker.style.display = 'block';
       marker.style.left = `${point.x}px`;
       marker.style.top = `${point.y}px`;
-      drawFinger(point, lastPoints.get(key), colour);
+      drawFinger(point, lastPoints.get(key), colour, key);
       lastPoints.set(key, point);
     });
   });
@@ -219,6 +227,7 @@ function handleHands(result) {
     if (!active.has(key)) {
       marker.style.display = 'none';
       lastPoints.delete(key);
+      lastDrawnPoints.delete(key);
     }
   });
   setHint(result.landmarks.length ? 'Extended fingers draw · curl a finger to lift its brush' : 'Show a hand to begin');
@@ -239,7 +248,7 @@ function fadeDrawing(now) {
   for (const stroke of fadingStrokes) {
     if (stroke.image) {
       const progress = Math.max(0, (now - stroke.born) / fadeDuration);
-      ctx.globalAlpha = 1 - progress ** 4;
+      ctx.globalAlpha = 1 - progress ** 2;
       ctx.shadowBlur = 0;
       ctx.shadowColor = 'transparent';
       ctx.drawImage(stroke.image, 0, 0, canvasWidth, canvasHeight);
@@ -253,7 +262,7 @@ function fadeDrawing(now) {
     fadeCtx.clearRect(0, 0, canvasWidth, canvasHeight);
     for (const stroke of strokes) paintStroke(stroke.point, stroke.from, stroke.colour, false, fadeCtx);
     const progress = Math.max(0, (now - bucket * 2000) / fadeDuration);
-    ctx.globalAlpha = 1 - progress ** 4;
+    ctx.globalAlpha = 1 - progress ** 2;
     ctx.drawImage(fadeLayer, 0, 0, canvasWidth, canvasHeight);
   }
   ctx.globalAlpha = 1;
@@ -285,6 +294,7 @@ $('camera-toggle').addEventListener('click', stopCamera);
 fadeButton.addEventListener('click', () => {
   const enabled = fadeButton.getAttribute('aria-pressed') !== 'true';
   fadeButton.setAttribute('aria-pressed', String(enabled));
+  lastDrawnPoints.clear();
   if (enabled) {
     const image = document.createElement('canvas');
     image.width = canvas.width;
